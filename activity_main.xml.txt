@@ -1,0 +1,65 @@
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="20dp">
+
+    <TextView
+        android:id="@+id/titleText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="LOGIN PAGE"
+        android:textStyle="bold"
+        android:textSize="24sp"
+        android:gravity="center"
+        android:layout_marginBottom="20dp"/>
+
+    <EditText
+        android:id="@+id/phoneNumber"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="Enter Emergency Contact"
+        android:inputType="phone"/>
+
+
+    <Button
+        android:id="@+id/addBtn"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Add Contact"
+        android:backgroundTint="#9C27B0"
+        android:layout_marginTop="10dp"/>
+
+    <Button
+        android:id="@+id/startBtn"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Start Safety"
+        android:backgroundTint="#9C27B0"
+        android:layout_marginTop="20dp"/>
+
+    <Button
+        android:id="@+id/stopBtn"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Stop Safety"
+        android:backgroundTint="#9C27B0"
+        android:layout_marginTop="10dp"/>
+
+    <Button
+        android:id="@+id/viewContactsBtn"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="View Saved Contacts"
+        android:backgroundTint="#9C27B0"
+        android:layout_marginTop="15dp"/>
+    <Button
+        android:id="@+id/deleteBtn"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Delete Contact"
+        android:backgroundTint="#9C27B0"
+        android:layout_marginTop="10dp"/>
+
+</LinearLayout>

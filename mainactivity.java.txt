@@ -1,0 +1,328 @@
+package com.example.mediquick;
+
+import android.Manifest;
+import android.app.AlertDialog;
+import android.content.Context;
+import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
+import android.hardware.Sensor;
+import android.hardware.SensorEvent;
+import android.hardware.SensorEventListener;
+import android.hardware.SensorManager;
+import android.location.Location;
+import android.location.LocationManager;
+import android.os.Bundle;
+import android.os.CountDownTimer;
+import android.telephony.SmsManager;
+import android.widget.Button;
+import android.widget.EditText;
+import android.widget.Toast;
+import android.content.Intent;
+import android.os.Handler;
+
+import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.app.ActivityCompat;
+
+import java.util.ArrayList;
+import java.util.List;
+
+public class MainActivity extends AppCompatActivity implements SensorEventListener {
+
+    EditText phoneNumber;
+    Button addBtn, startBtn, stopBtn, viewContactsBtn, deleteBtn;
+
+    SensorManager sensorManager;
+    Sensor accelerometer;
+VoiceHelper voiceHelper;
+    LocationManager locationManager; // ✅ FIX ADDED
+
+    boolean isSafetyOn = false;
+    long lastShakeTime = 0;
+
+    List<String> contactList = new ArrayList<>();
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_main);
+
+        phoneNumber = findViewById(R.id.phoneNumber);
+        addBtn = findViewById(R.id.addBtn);
+        startBtn = findViewById(R.id.startBtn);
+        stopBtn = findViewById(R.id.stopBtn);
+        viewContactsBtn = findViewById(R.id.viewContactsBtn);
+        deleteBtn = findViewById(R.id.deleteBtn);
+
+        sensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
+        accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
+voiceHelper=new VoiceHelper(this, () -> {
+    triggerEmergency();
+});
+        locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE); // ✅ FIX
+
+        loadContacts();
+
+        // ADD CONTACT
+        addBtn.setOnClickListener(v -> {
+            String number = phoneNumber.getText().toString().trim();
+
+            if (number.isEmpty()) {
+                Toast.makeText(this, "Enter number", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            if (!contactList.contains(number)) {
+                contactList.add(number);
+                saveContacts();
+                phoneNumber.setText("");
+                Toast.makeText(this, "Contact Added", Toast.LENGTH_SHORT).show();
+            } else {
+                Toast.makeText(this, "Already exists", Toast.LENGTH_SHORT).show();
+            }
+        });
+
+        // VIEW CONTACTS
+        viewContactsBtn.setOnClickListener(v -> {
+            if (contactList.isEmpty()) {
+                Toast.makeText(this, "No contacts saved", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            StringBuilder sb = new StringBuilder();
+            for (String num : contactList) {
+                sb.append(num).append("\n");
+            }
+
+            new AlertDialog.Builder(this)
+                    .setTitle("Saved Contacts")
+                    .setMessage(sb.toString())
+                    .setPositiveButton("OK", null)
+                    .show();
+        });
+
+        // DELETE CONTACT
+        deleteBtn.setOnClickListener(v -> {
+            String input = phoneNumber.getText().toString().trim();
+
+            if (input.isEmpty()) {
+                Toast.makeText(this, "Enter number", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            // ✅ Normalize input
+            input = input.replaceAll("\\s+", "").replace("+91", "");
+
+            boolean found = false;
+
+            for (int i = 0; i < contactList.size(); i++) {
+                String saved = contactList.get(i)
+                        .replaceAll("\\s+", "")
+                        .replace("+91", "");
+
+                if (saved.equals(input)) {
+                    contactList.remove(i);
+                    found = true;
+                    break;
+                }
+            }
+
+            if (found) {
+                saveContacts();
+                phoneNumber.setText("");
+                Toast.makeText(this, "Deleted", Toast.LENGTH_SHORT).show();
+            } else {
+                Toast.makeText(this, "Number not found", Toast.LENGTH_SHORT).show();
+            }
+        });
+        startBtn.setOnClickListener(v -> {
+            isSafetyOn = true;
+            voiceHelper.startListening(); // 🔥 START VOICE
+            Toast.makeText(this, "Safety Started", Toast.LENGTH_SHORT).show();
+        });
+        stopBtn.setOnClickListener(v -> {
+            isSafetyOn = false;
+            voiceHelper.stopListening(); // 🔥 STOP VOICE
+            Toast.makeText(this, "Safety Stopped", Toast.LENGTH_SHORT).show();
+        });
+
+        ActivityCompat.requestPermissions(this,
+                new String[]{
+                        Manifest.permission.RECORD_AUDIO,
+                        Manifest.permission.SEND_SMS,
+                        Manifest.permission.ACCESS_FINE_LOCATION,
+                        Manifest.permission.CALL_PHONE
+                }, 1);
+    }
+
+    @Override
+    public void onSensorChanged(SensorEvent event) {
+
+        if (!isSafetyOn) return;
+
+        float x = event.values[0];
+        float y = event.values[1];
+        float z = event.values[2];
+
+        float acceleration = (float) Math.sqrt(x * x + y * y + z * z);
+
+        if (acceleration > 20) {
+            long now = System.currentTimeMillis();
+
+            if (now - lastShakeTime > 2000) {
+                lastShakeTime = now;
+                showAlert();
+            }
+        }
+    }
+
+    private void showAlert() {
+
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("Are you OK?");
+        builder.setMessage("No response in 10 sec = Emergency");
+        builder.setCancelable(false);
+
+        builder.setPositiveButton("YES", (dialog, which) ->
+                Toast.makeText(this, "Safe 👍", Toast.LENGTH_SHORT).show());
+
+        builder.setNegativeButton("NO", (d, w) -> triggerEmergency());
+
+        AlertDialog dialog = builder.create();
+        dialog.show();
+
+        new CountDownTimer(10000, 1000) {
+            public void onTick(long ms) {}
+
+            public void onFinish() {
+                if (dialog.isShowing()) {
+                    dialog.dismiss();
+                    triggerEmergency();
+                }
+            }
+        }.start();
+    }
+
+    // ✅ FIXED LOCATION METHOD
+    private Location getLocation() {
+
+        Location location = null;
+
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+                == PackageManager.PERMISSION_GRANTED) {
+
+            location = locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER);
+
+            if (location == null) {
+                location = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
+            }
+        }
+
+        return location;
+    }
+
+    private void triggerEmergency() {
+
+        if (contactList.isEmpty()) {
+            Toast.makeText(this, "No contacts", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        Location location = getLocation();
+
+        String msg;
+
+        if (location != null) {
+            msg = "EMERGENCY!! I NEED HELP! My location:\nhttps://maps.google.com/?q="
+                    + location.getLatitude() + "," + location.getLongitude();
+        } else {
+            msg = "HELP! Location not found!";
+        }
+
+        try {
+            SmsManager smsManager = SmsManager.getDefault();
+
+            for (String number : contactList) {
+                smsManager.sendTextMessage(number, null, msg, null, null);
+            }
+
+            Toast.makeText(this, "SMS Sent", Toast.LENGTH_SHORT).show();
+
+        } catch (Exception e) {
+            Toast.makeText(this, "SMS Failed", Toast.LENGTH_SHORT).show();
+        }
+
+        try {
+            Intent callIntent = new Intent(Intent.ACTION_CALL);
+            callIntent.setData(android.net.Uri.parse("tel:" + contactList.get(0)));
+
+            if (ActivityCompat.checkSelfPermission(this, Manifest.permission.CALL_PHONE)
+                    != PackageManager.PERMISSION_GRANTED) {
+                return;
+            }
+
+            startActivity(callIntent);
+
+        } catch (Exception e) {
+            Toast.makeText(this, "Call Failed", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void saveContacts() {
+        SharedPreferences sp = getSharedPreferences("contacts", MODE_PRIVATE);
+        SharedPreferences.Editor ed = sp.edit();
+
+        StringBuilder sb = new StringBuilder();
+        for (String n : contactList) sb.append(n).append(",");
+
+        ed.putString("list", sb.toString());
+        ed.apply();
+    }
+
+    private void loadContacts() {
+        SharedPreferences sp = getSharedPreferences("contacts", MODE_PRIVATE);
+        String data = sp.getString("list", "");
+
+        contactList.clear();
+
+        if (!data.isEmpty()) {
+            String[] arr = data.split(",");
+            for (String n : arr) {
+                if (!n.trim().isEmpty()) contactList.add(n.trim());
+            }
+        }
+    }
+    // 🔽 ONLY NEW PART ADDED AT BOTTOM
+
+    public static List<String> getSavedContacts(Context context) {
+        SharedPreferences sp = context.getSharedPreferences("contacts", Context.MODE_PRIVATE);
+        String data = sp.getString("list", "");
+
+        List<String> contacts = new ArrayList<>();
+
+        if (!data.isEmpty()) {
+            String[] arr = data.split(",");
+            for (String n : arr) {
+                if (!n.trim().isEmpty()) {
+                    contacts.add(n.trim());
+                }
+            }
+        }
+
+        return contacts;
+    }
+
+    @Override
+    public void onAccuracyChanged(Sensor sensor, int accuracy) {}
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_NORMAL);
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        sensorManager.unregisterListener(this);
+    }
+}
